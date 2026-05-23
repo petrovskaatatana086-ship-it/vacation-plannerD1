@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vacation Planner</title>
+  <meta name="theme-color" content="#0f172a" />
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { darkMode: 'class' };
+  </script>
+  <style>
+    body { margin: 0; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useMemo, useState } = React;
+
+    const INITIAL_PACKING_CATS = ["Мои вещи", "Аптечка", "Документы", "Техника", "Разное"];
+    const INITIAL_NOTE_CATS = ["Адреса", "Покупки", "Локации", "Важное"];
+    const INITIAL_BUDGET_CATS = ["Транспорт", "Жилье", "Развлечения", "Питание", "Другое"];
+    const TASK_TIMES = ["В планах", "За 30 дней", "За 14 дней", "За 7 дней", "24 часа"];
+    const INITIAL_RATES = { "₽": 1, "$": 90, "€": 98, "¥": 12.5 };
+
+    const createId = () => Date.now() + Math.random();
+
+    function convertMoney(amount, from, to, rates = INITIAL_RATES) {
+      const value = Number(amount) || 0;
+      return (value * (rates[from] || 1)) / (rates[to] || 1);
+    }
+
+    function formatMoney(amount, currency = "₽", digits = 2) {
+      return `${Number(amount || 0).toLocaleString("ru-RU", { maximumFractionDigits: digits })} ${currency}`;
+    }
+
+    function createTrip(name = "Лазурный Берег", date = "2026-07-15") {
+      const isDemo = name === "Лазурный Берег";
+      return {
+        id: createId(),
+        name,
+        date,
+        archived: false,
+        archivedAt: null,
+        activePackingCat: "Документы",
+        tasks: isDemo ? [
+          { id: createId(), title: "Проверить сроки действия паспортов", time: "За 30 дней", completed: false },
+          { id: createId(), title: "Оформить туристическую страховку", time: "За 14 дней", completed: true },
+          { id: createId(), title: "Загрузить офлайн-карты местности", time: "За 7 дней", completed: false },
+          { id: createId(), title: "Зарядить повербанк и гаджеты", time: "24 часа", completed: false },
+        ] : [
+          { id: createId(), title: `Подготовить план поездки: ${name}`, time: "В планах", completed: false },
+          { id: createId(), title: "Проверить документы и бронирования", time: "За 30 дней", completed: false },
+        ],
+        packingList: isDemo ? [
+          { id: createId(), item: "Загранпаспорт и копии документов", cat: "Документы", checked: false },
+          { id: createId(), item: "Аптечка: обезболивающее, пластыри", cat: "Аптечка", checked: false },
+          { id: createId(), item: "Зарядные устройства и адаптеры", cat: "Техника", checked: true },
+        ] : [
+          { id: createId(), item: `Документы для поездки: ${name}`, cat: "Документы", checked: false },
+          { id: createId(), item: "Зарядка телефона", cat: "Техника", checked: false },
+        ],
+        notes: isDemo ? [{
+          id: createId(),
+          title: "Полезные контакты",
+          content: "Отель: +7 (999) 123-45-67\nСтраховая: 8 (800) 555-35-35",
+          category: "Важное",
+        }] : [{
+          id: createId(),
+          title: `Заметки: ${name}`,
+          content: "Добавьте адрес отеля, контакты, бронирования и важные ссылки.",
+          category: "Важное",
+        }],
+        itinerary: isDemo ? [
+          { id: createId(), day: "День 1", time: "09:00", title: "Вылет и прибытие", content: "Трансфер в отель и заселение." },
+          { id: createId(), day: "День 1", time: "18:00", title: "Приветственный ужин", content: "Прогулка по центру города." },
+        ] : [
+          { id: createId(), day: "День 1", time: "12:00", title: `Старт поездки: ${name}`, content: "Добавьте перелёт, трансфер, отель и первые планы." },
+        ],
+        budget: isDemo ? [
+          { id: createId(), title: "Авиабилеты", cost: 35000, currency: "₽", category: "Транспорт" },
+          { id: createId(), title: "Бронь отеля", cost: 420, currency: "€", category: "Жилье" },
+          { id: createId(), title: "Экскурсии и билеты", cost: 180, currency: "$", category: "Развлечения" },
+          { id: createId(), title: "Сувениры", cost: 1200, currency: "¥", category: "Другое" },
+        ] : [
+          { id: createId(), title: `Первичный бюджет: ${name}`, cost: 0, currency: "₽", category: "Другое" },
+        ],
+        lastMinute: [
+          { id: createId(), title: "Утюг выключен", checked: false },
+          { id: createId(), title: "Окна закрыты", checked: false },
+          { id: createId(), title: "Вода перекрыта", checked: false },
+          { id: createId(), title: "Мусор вынесен", checked: false },
+        ],
+      };
+    }
+
+    const Icon = ({ children }) => <span className="inline-flex w-5 justify-center">{children}</span>;
+
+    function NavButton({ active, icon, label, onClick }) {
+      return (
+        <button onClick={onClick} className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-medium transition-all ${active ? "bg-blue-600 text-white shadow-lg shadow-blue-500/20" : "text-slate-300 hover:bg-slate-800 hover:text-white"}`}>
+          <Icon>{icon}</Icon>
+          <span className="text-sm">{label}</span>
+        </button>
+      );
+    }
+
+    function Modal({ title, children }) {
+      return (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white rounded-3xl p-6 w-full max-w-md border border-slate-200 dark:border-slate-800 shadow-2xl max-h-[92vh] overflow-y-auto">
+            <h3 className="text-xl font-extrabold mb-4">{title}</h3>
+            {children}
+          </div>
+        </div>
+      );
+    }
+
+    function Card({ title, children }) {
+      return (
+        <div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <span className="text-xs font-bold text-slate-400 tracking-wider uppercase mb-3 block">{title}</span>
+          {children}
+        </div>
+      );
+    }
+
+    function Stat({ icon, value, label }) {
+      return (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-3xl shadow-sm flex items-center gap-4">
+          <div className="p-3 bg-blue-100 text-blue-600 dark:bg-blue-950/30 dark:text-blue-400 rounded-2xl text-xl">{icon}</div>
+          <div>
+            <div className="text-xl font-bold">{value}</div>
+            <div className="text-xs text-slate-400">{label}</div>
+          </div>
+        </div>
+      );
+    }
+
+    function Row({ checked, onChange, text, onEdit, onDelete }) {
+      return (
+        <div className="flex justify-between items-center py-2.5 border-b border-slate-100 dark:border-slate-800/80 last:border-0 group">
+          <label className="flex items-center gap-3 cursor-pointer min-w-0">
+            <input type="checkbox" checked={checked} onChange={onChange} className="w-5 h-5 rounded shrink-0" />
+            <span className={`text-sm font-medium truncate ${checked ? "line-through text-slate-400" : "text-slate-800 dark:text-slate-200"}`}>{text}</span>
+          </label>
+          <div className="flex gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+            {onEdit && <button onClick={onEdit} className="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline">Изм.</button>}
+            {onDelete && <button onClick={onDelete} className="text-[11px] font-bold text-rose-600 dark:text-rose-400 hover:underline">Удал.</button>}
+          </div>
+        </div>
+      );
+    }
+
+    function App() {
+      const [darkMode, setDarkMode] = useState(false);
+      const [activeMainTab, setActiveMainTab] = useState("home");
+      const [infoSubTab, setInfoSubTab] = useState("notes");
+      const [trips, setTrips] = useState([createTrip()]);
+      const [currentTripId, setCurrentTripId] = useState(null);
+
+      const [packingCats, setPackingCats] = useState(INITIAL_PACKING_CATS);
+      const [noteCats, setNoteCats] = useState(INITIAL_NOTE_CATS);
+      const [budgetCats, setBudgetCats] = useState(INITIAL_BUDGET_CATS);
+
+      const [displayCurrency, setDisplayCurrency] = useState("₽");
+      const [rates, setRates] = useState(INITIAL_RATES);
+      const [showRates, setShowRates] = useState(false);
+
+      const [modal, setModal] = useState(null);
+      const [form, setForm] = useState({});
+
+      const activeTrips = useMemo(() => trips.filter((item) => !item.archived), [trips]);
+      const archivedTrips = useMemo(() => trips.filter((item) => item.archived), [trips]);
+
+      const trip = useMemo(() => trips.find((item) => item.id === currentTripId) || activeTrips[0] || archivedTrips[0] || trips[0], [trips, currentTripId, activeTrips, archivedTrips]);
+
+      const updateTrip = (updater) => setTrips((previous) => previous.map((item) => (item.id === trip.id ? updater(item) : item)));
+
+      const totalBudget = useMemo(() => trip.budget.reduce((sum, item) => sum + convertMoney(item.cost, item.currency, displayCurrency, rates), 0), [trip.budget, displayCurrency, rates]);
+
+      const progress = trip.tasks.length ? Math.round((trip.tasks.filter((item) => item.completed).length / trip.tasks.length) * 100) : 0;
+      const daysLeft = trip.date ? Math.max(0, Math.ceil((new Date(trip.date).getTime() - Date.now()) / (1000 * 3600 * 24))) : "—";
+
+      const openModal = (type, item = null) => {
+        setModal(type);
+        if (type === "trip") setForm({ name: "", date: "" });
+        if (type === "task") setForm(item ? { ...item } : { title: "", time: "В планах" });
+        if (type === "packing") setForm(item ? { ...item } : { item: "", cat: trip.activePackingCat || packingCats[0] });
+        if (type === "last") setForm(item ? { ...item } : { title: "" });
+        if (type === "note") setForm(item ? { ...item } : { title: "", content: "", category: noteCats[0] });
+        if (type === "itinerary") setForm(item ? { ...item } : { day: "День 1", time: "12:00", title: "", content: "" });
+        if (type === "budget") setForm(item ? { ...item } : { title: "", cost: "", currency: displayCurrency, category: budgetCats[0] });
+      };
+
+      const closeModal = () => { setModal(null); setForm({}); };
+      const setField = (key, value) => setForm((previous) => ({ ...previous, [key]: value }));
+
+      const addCategory = (type, rawValue) => {
+        const value = String(rawValue || "").trim();
+        if (!value) return null;
+        if (type === "packing") {
+          if (!packingCats.includes(value)) setPackingCats((previous) => [...previous, value]);
+          return value;
+        }
+        if (type === "notes") {
+          if (!noteCats.includes(value)) setNoteCats((previous) => [...previous, value]);
+          return value;
+        }
+        if (type === "budget") {
+          if (!budgetCats.includes(value)) setBudgetCats((previous) => [...previous, value]);
+          return value;
+        }
+        return null;
+      };
+
+      const saveModal = () => {
+        if (modal === "trip") {
+          if (!form.name?.trim()) return;
+          const nextTrip = createTrip(form.name.trim(), form.date || "");
+          setTrips((previous) => [...previous, nextTrip]);
+          setCurrentTripId(nextTrip.id);
+          closeModal();
+          return;
+        }
+
+        if (modal === "task") {
+          if (!form.title?.trim()) return;
+          updateTrip((current) => ({
+            ...current,
+            tasks: form.id
+              ? current.tasks.map((item) => item.id === form.id ? { ...item, title: form.title.trim(), time: form.time || "В планах" } : item)
+              : [{ id: createId(), title: form.title.trim(), time: form.time || "В планах", completed: false }, ...current.tasks],
+          }));
+        }
+
+        if (modal === "packing") {
+          if (!form.item?.trim()) return;
+          updateTrip((current) => ({
+            ...current,
+            activePackingCat: form.cat || packingCats[0],
+            packingList: form.id
+              ? current.packingList.map((item) => item.id === form.id ? { ...item, item: form.item.trim(), cat: form.cat || packingCats[0] } : item)
+              : [{ id: createId(), item: form.item.trim(), cat: form.cat || packingCats[0], checked: false }, ...current.packingList],
+          }));
+        }
+
+        if (modal === "last") {
+          if (!form.title?.trim()) return;
+          updateTrip((current) => ({
+            ...current,
+            lastMinute: form.id
+              ? current.lastMinute.map((item) => item.id === form.id ? { ...item, title: form.title.trim() } : item)
+              : [{ id: createId(), title: form.title.trim(), checked: false }, ...current.lastMinute],
+          }));
+        }
+
+        if (modal === "note") {
+          if (!form.title?.trim()) return;
+          updateTrip((current) => ({
+            ...current,
+            notes: form.id
+              ? current.notes.map((item) => item.id === form.id ? { ...item, title: form.title.trim(), content: form.content || "", category: form.category || noteCats[0] } : item)
+              : [{ id: createId(), title: form.title.trim(), content: form.content || "", category: form.category || noteCats[0] }, ...current.notes],
+          }));
+        }
+
+        if (modal === "itinerary") {
+          if (!form.title?.trim()) return;
+          updateTrip((current) => {
+            const nextItem = { id: form.id || createId(), day: form.day || "День 1", time: form.time || "12:00", title: form.title.trim(), content: form.content || "" };
+            const nextList = form.id ? current.itinerary.map((item) => item.id === form.id ? nextItem : item) : [nextItem, ...current.itinerary];
+            return { ...current, itinerary: nextList.sort((a, b) => `${a.day} ${a.time}`.localeCompare(`${b.day} ${b.time}`)) };
+          });
+        }
+
+        if (modal === "budget") {
+          if (!form.title?.trim()) return;
+          const nextItem = { id: form.id || createId(), title: form.title.trim(), cost: Number(form.cost) || 0, currency: form.currency || "₽", category: form.category || budgetCats[0] };
+          updateTrip((current) => ({
+            ...current,
+            budget: form.id ? current.budget.map((item) => item.id === form.id ? nextItem : item) : [nextItem, ...current.budget],
+          }));
+        }
+
+        closeModal();
+      };
+
+      const deleteFrom = (field, itemId) => updateTrip((current) => ({ ...current, [field]: current[field].filter((item) => item.id !== itemId) }));
+      const toggleIn = (field, itemId, key) => updateTrip((current) => ({ ...current, [field]: current[field].map((item) => item.id === itemId ? { ...item, [key]: !item[key] } : item) }));
+
+      const archiveTrip = () => {
+        updateTrip((current) => ({ ...current, archived: true, archivedAt: new Date().toISOString() }));
+        const nextTrip = activeTrips.find((item) => item.id !== trip.id);
+        setCurrentTripId(nextTrip?.id || null);
+        setActiveMainTab("home");
+      };
+
+      const restoreTrip = (tripId) => {
+        setTrips((previous) => previous.map((item) => item.id === tripId ? { ...item, archived: false, archivedAt: null } : item));
+        setCurrentTripId(tripId);
+        setActiveMainTab("home");
+      };
+
+      return (
+        <div className={darkMode ? "dark" : ""}>
+          {modal && (
+            <EditorModal
+              modal={modal}
+              form={form}
+              setField={setField}
+              save={saveModal}
+              close={closeModal}
+              rates={rates}
+              packingCats={packingCats}
+              noteCats={noteCats}
+              budgetCats={budgetCats}
+              addCategory={addCategory}
+            />
+          )}
+
+          <div className="min-h-screen flex flex-col md:flex-row bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 font-sans">
+            <aside className="w-full md:w-80 bg-slate-900 text-white p-5 flex flex-col justify-between md:min-h-screen sticky top-0 z-20 shadow-xl">
+              <div>
+                <div className="flex justify-between items-center mb-6">
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl">🌴</span>
+                    <h2 className="text-xl font-bold tracking-tight">Vacation Planner</h2>
+                  </div>
+                  <div className="flex gap-1">
+                    <button className="p-2 rounded-xl bg-slate-800">⚙️</button>
+                    <button onClick={() => setDarkMode(!darkMode)} className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700">{darkMode ? "☀️" : "🌙"}</button>
+                  </div>
+                </div>
+
+                <div className="bg-slate-800/40 border border-slate-700/30 rounded-2xl p-4 mb-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-bold text-slate-400 tracking-wider uppercase">Мои путешествия</span>
+                    <button onClick={() => openModal("trip")} className="text-xs bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-xl font-bold">+ Новая</button>
+                  </div>
+
+                  <div className="space-y-2 mb-4 max-h-36 overflow-y-auto pr-1">
+                    {activeTrips.map((item) => (
+                      <button key={item.id} onClick={() => { setCurrentTripId(item.id); setActiveMainTab("home"); }} className={`w-full text-left px-3 py-2 rounded-xl border ${item.id === trip.id ? "bg-blue-600/20 border-blue-500 text-white" : "bg-slate-900/60 border-slate-700/50 text-slate-300"}`}>
+                        <div className="text-sm font-bold truncate">{item.name}</div>
+                        <div className="text-[11px] text-slate-400">{item.date ? new Date(item.date).toLocaleDateString("ru-RU") : "Дата не указана"}</div>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="border-t border-slate-700/50 pt-3 mt-3">
+                    <h3 className="text-base font-bold truncate">{trip.name}</h3>
+                    {trip.archived ? (
+                      <button onClick={() => restoreTrip(trip.id)} className="mt-3 w-full flex items-center justify-center gap-2 text-xs bg-emerald-600 px-3 py-2 rounded-xl font-bold">↩️ Вернуть из архива</button>
+                    ) : (
+                      <button onClick={archiveTrip} className="mt-3 w-full flex items-center justify-center gap-2 text-xs bg-amber-600 px-3 py-2 rounded-xl font-bold">📦 Завершить и в архив</button>
+                    )}
+                  </div>
+                </div>
+
+                <nav className="space-y-2">
+                  <NavButton active={activeMainTab === "home"} icon="🏠" label="Главный экран" onClick={() => setActiveMainTab("home")} />
+                  <NavButton active={activeMainTab === "tasks"} icon="📌" label="План подготовки" onClick={() => setActiveMainTab("tasks")} />
+                  <NavButton active={activeMainTab === "packing"} icon="🧳" label="Чек-лист вещей" onClick={() => setActiveMainTab("packing")} />
+                  <NavButton active={activeMainTab === "notes"} icon="📝" label="Детали поездки" onClick={() => setActiveMainTab("notes")} />
+                  <NavButton active={activeMainTab === "archive"} icon="📦" label={`Архив (${archivedTrips.length})`} onClick={() => setActiveMainTab("archive")} />
+                </nav>
+              </div>
+              <div className="hidden md:block text-xs text-slate-500 mt-8 border-t border-slate-800 pt-4">Ultimate Vacation Organizer • HTML</div>
+            </aside>
+
+            <main className="flex-1 p-4 md:p-8 max-w-5xl mx-auto w-full pb-24">
+              <Header trip={trip} />
+
+              {activeMainTab === "home" && <HomeScreen trip={trip} daysLeft={daysLeft} totalBudget={totalBudget} displayCurrency={displayCurrency} progress={progress} openLast={() => openModal("last")} editLast={(item) => openModal("last", item)} deleteLast={(itemId) => deleteFrom("lastMinute", itemId)} toggleLast={(itemId) => toggleIn("lastMinute", itemId, "checked")} />}
+              {activeMainTab === "tasks" && <TasksScreen trip={trip} openNew={() => openModal("task")} edit={(item) => openModal("task", item)} del={(itemId) => deleteFrom("tasks", itemId)} toggle={(itemId) => toggleIn("tasks", itemId, "completed")} />}
+              {activeMainTab === "packing" && <PackingScreen trip={trip} updateTrip={updateTrip} openNew={() => openModal("packing")} edit={(item) => openModal("packing", item)} del={(itemId) => deleteFrom("packingList", itemId)} toggle={(itemId) => toggleIn("packingList", itemId, "checked")} packingCats={packingCats} />}
+              {activeMainTab === "notes" && <DetailsScreen trip={trip} infoSubTab={infoSubTab} setInfoSubTab={setInfoSubTab} openModal={openModal} deleteFrom={deleteFrom} rates={rates} setRates={setRates} displayCurrency={displayCurrency} setDisplayCurrency={setDisplayCurrency} showRates={showRates} setShowRates={setShowRates} noteCats={noteCats} budgetCats={budgetCats} />}
+              {activeMainTab === "archive" && <ArchiveScreen archivedTrips={archivedTrips} rates={rates} open={(tripId) => { setCurrentTripId(tripId); setActiveMainTab("home"); }} restore={restoreTrip} />}
+            </main>
+          </div>
+        </div>
+      );
+    }
+
+    function Header({ trip }) {
+      return (
+        <div className="mb-5 flex items-center justify-between gap-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 shadow-sm">
+          <div>
+            <div className="text-[11px] uppercase tracking-wider text-slate-400 font-bold">{trip.archived ? "Архивное путешествие" : "Активное путешествие"}</div>
+            <div className="font-extrabold text-slate-900 dark:text-white flex items-center gap-2">{trip.name}{trip.archived && <span className="text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 px-2 py-0.5 rounded-full">архив</span>}</div>
+          </div>
+          <div className="text-xs text-slate-500 dark:text-slate-400 text-right">{trip.date ? new Date(trip.date).toLocaleDateString("ru-RU") : "Дата не указана"}</div>
+        </div>
+      );
+    }
+
+    function HomeScreen({ trip, daysLeft, totalBudget, displayCurrency, progress, openLast, editLast, deleteLast, toggleLast }) {
+      return (
+        <div className="space-y-6">
+          <section className="bg-gradient-to-br from-indigo-900 via-slate-900 to-blue-950 rounded-3xl p-6 md:p-8 text-white relative overflow-hidden shadow-xl">
+            <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none text-8xl">✈️</div>
+            <span className="bg-blue-500/20 text-blue-300 border border-blue-500/30 text-xs px-3 py-1 rounded-full font-bold uppercase tracking-wider">Ваше путешествие</span>
+            <h1 className="text-3xl md:text-4xl font-extrabold mt-3">{trip.name}</h1>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6 pt-6 border-t border-white/10">
+              <div><p className="text-xs text-indigo-200 uppercase">Осталось дней</p><p className="text-2xl font-bold mt-1">{daysLeft}</p></div>
+              <div><p className="text-xs text-indigo-200 uppercase">Дата</p><p className="text-sm font-semibold mt-1 text-indigo-100">{trip.date ? new Date(trip.date).toLocaleDateString("ru-RU") : "Не указана"}</p></div>
+              <div><p className="text-xs text-indigo-200 uppercase">Бюджет</p><p className="text-sm font-semibold mt-1 text-emerald-400">{formatMoney(totalBudget, displayCurrency)}</p></div>
+              <div><p className="text-xs text-indigo-200 uppercase">Подготовка</p><p className="text-sm font-semibold mt-1">{progress}%</p></div>
+            </div>
+          </section>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <Stat icon="📌" value={trip.tasks.filter((item) => !item.completed).length} label="задач в плане" />
+            <Stat icon="🧳" value={trip.packingList.filter((item) => !item.checked).length} label="вещей не собрано" />
+            <Stat icon="💰" value={trip.budget.length} label="позиций в бюджете" />
+          </div>
+
+          <section className="bg-rose-50 dark:bg-rose-950/20 border border-rose-200/50 dark:border-rose-950/30 p-6 rounded-3xl">
+            <div className="flex items-center justify-between gap-4 mb-4">
+              <h3 className="font-extrabold text-base flex items-center gap-2 text-rose-800 dark:text-rose-400">⚡ Финальный чек-лист</h3>
+              <button onClick={openLast} className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-2xl text-xs font-bold flex items-center gap-1.5">+ Добавить</button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {trip.lastMinute.map((item) => (
+                <div key={item.id} className="flex items-center justify-between gap-3 text-sm font-semibold p-2 hover:bg-white/40 dark:hover:bg-slate-900/30 rounded-xl group">
+                  <label className="flex items-center gap-3 cursor-pointer min-w-0"><input type="checkbox" checked={item.checked} onChange={() => toggleLast(item.id)} /><span className={`truncate ${item.checked ? "line-through text-slate-400" : ""}`}>{item.title}</span></label>
+                  <div className="flex gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100"><button onClick={() => editLast(item)} className="text-[11px] font-bold text-blue-600">Изм.</button><button onClick={() => deleteLast(item.id)} className="text-[11px] font-bold text-rose-600">Удал.</button></div>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      );
+    }
+
+    function TasksScreen({ trip, openNew, edit, del, toggle }) {
+      return (
+        <div className="space-y-6">
+          <div className="flex justify-between items-center gap-4">
+            <div><h2 className="text-2xl font-extrabold tracking-tight">📌 План подготовки</h2><p className="text-xs text-slate-400 mt-1">Задачи выбранной поездки: {trip.name}</p></div>
+            <button onClick={openNew} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-2xl text-sm font-bold flex items-center gap-1.5">+ Добавить задачу</button>
+          </div>
+          {TASK_TIMES.map((preset) => {
+            const filtered = trip.tasks.filter((item) => item.time === preset);
+            if (!filtered.length) return null;
+            return (
+              <div key={preset} className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm">
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">{preset}</h3>
+                {filtered.map((item) => <Row key={item.id} checked={item.completed} onChange={() => toggle(item.id)} text={item.title} onEdit={() => edit(item)} onDelete={() => del(item.id)} />)}
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    function PackingScreen({ trip, updateTrip, openNew, edit, del, toggle, packingCats }) {
+      const items = trip.packingList.filter((item) => item.cat === trip.activePackingCat);
+      return (
+        <div className="space-y-6">
+          <div className="flex flex-wrap justify-between items-center gap-4">
+            <div><h2 className="text-2xl font-extrabold tracking-tight">🧳 Упаковка вещей</h2><p className="text-xs text-slate-400 mt-1">Список вещей выбранной поездки: {trip.name}</p></div>
+            <button onClick={openNew} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-2xl text-sm font-bold flex items-center gap-1.5">+ Добавить вещь</button>
+          </div>
+          <div className="flex gap-1.5 overflow-x-auto pb-2 no-scrollbar">
+            {packingCats.map((cat) => <button key={cat} onClick={() => updateTrip((current) => ({ ...current, activePackingCat: cat }))} className={`px-4 py-2.5 rounded-2xl text-xs font-bold whitespace-nowrap ${trip.activePackingCat === cat ? "bg-indigo-600 text-white shadow-md" : "bg-white dark:bg-slate-900 border dark:border-slate-800 text-slate-600 dark:text-slate-300"}`}>{cat}</button>)}
+          </div>
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 shadow-sm">
+            {items.map((item) => <Row key={item.id} checked={item.checked} onChange={() => toggle(item.id)} text={item.item} onEdit={() => edit(item)} onDelete={() => del(item.id)} />)}
+            {items.length === 0 && <p className="text-center py-10 text-slate-400 text-xs">В этой категории пока нет вещей.</p>}
+          </div>
+        </div>
+      );
+    }
+
+    function DetailsScreen({ trip, infoSubTab, setInfoSubTab, openModal, deleteFrom, rates, setRates, displayCurrency, setDisplayCurrency, showRates, setShowRates, noteCats, budgetCats }) {
+      return (
+        <div className="space-y-6">
+          <div className="flex gap-2 bg-slate-200/60 dark:bg-slate-900 p-1 rounded-2xl w-fit">
+            {[["notes", "📝", "Заметки"], ["itinerary", "🗺️", "Маршрут"], ["budget", "💰", "Бюджет"]].map(([tab, icon, title]) => (
+              <button key={tab} onClick={() => setInfoSubTab(tab)} className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold ${infoSubTab === tab ? "bg-white dark:bg-slate-800 text-blue-600 dark:text-white shadow-sm" : "text-slate-600 dark:text-slate-400"}`}>{icon} {title}</button>
+            ))}
+          </div>
+          {infoSubTab === "notes" && <NotesSection trip={trip} openModal={openModal} deleteFrom={deleteFrom} noteCats={noteCats} />}
+          {infoSubTab === "itinerary" && <ItinerarySection trip={trip} openModal={openModal} deleteFrom={deleteFrom} />}
+          {infoSubTab === "budget" && <BudgetSection trip={trip} openModal={openModal} deleteFrom={deleteFrom} rates={rates} setRates={setRates} displayCurrency={displayCurrency} setDisplayCurrency={setDisplayCurrency} showRates={showRates} setShowRates={setShowRates} budgetCats={budgetCats} />}
+        </div>
+      );
+    }
+
+    function NotesSection({ trip, openModal, deleteFrom, noteCats }) {
+      return (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center gap-4"><div><h3 className="text-lg font-bold">📝 Заметки</h3><p className="text-xs text-slate-400">Добавляйте и редактируйте полезную информацию.</p></div><button onClick={() => openModal("note")} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-2xl text-sm font-bold flex items-center gap-1.5">+ Добавить</button></div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {noteCats.map((cat) => {
+              const notes = trip.notes.filter((item) => item.category === cat);
+              return (
+                <Card key={cat} title={cat}>
+                  {notes.map((note) => (
+                    <div key={note.id} className="border-l-2 border-indigo-500 pl-3 py-1 mb-4 group">
+                      <div className="flex items-start justify-between gap-2"><h4 className="font-bold text-sm text-slate-800 dark:text-slate-200">{note.title}</h4><div className="flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100"><button onClick={() => openModal("note", note)} className="text-[11px] font-bold text-blue-600">Изм.</button><button onClick={() => deleteFrom("notes", note.id)} className="text-[11px] font-bold text-rose-600">Удал.</button></div></div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 whitespace-pre-line leading-relaxed">{note.content}</p>
+                    </div>
+                  ))}
+                  {notes.length === 0 && <p className="text-slate-400 text-xs">Нет записей.</p>}
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    function ItinerarySection({ trip, openModal, deleteFrom }) {
+      return (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center gap-4"><div><h3 className="text-lg font-bold">🗺️ Маршрут</h3><p className="text-xs text-slate-400">Добавляйте события, время, дни и детали маршрута.</p></div><button onClick={() => openModal("itinerary")} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-2xl text-sm font-bold flex items-center gap-1.5">+ Добавить</button></div>
+          <div className="relative border-l-2 border-slate-200 dark:border-slate-800 ml-4 space-y-6 py-2">
+            {trip.itinerary.map((item) => (
+              <div key={item.id} className="relative pl-6"><div className="absolute -left-[7px] top-1.5 w-3 h-3 rounded-full bg-blue-600 border-2 border-white dark:border-slate-950" /><div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 rounded-2xl shadow-sm group"><div className="flex items-start justify-between gap-3 mb-2"><div className="flex items-center gap-2"><span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold px-2 py-0.5 rounded-full">{item.day}</span><span className="text-[10px] bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 font-bold px-2 py-0.5 rounded-full flex items-center gap-1">🕒 {item.time}</span></div><div className="flex gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100"><button onClick={() => openModal("itinerary", item)} className="text-[11px] font-bold text-blue-600">Изм.</button><button onClick={() => deleteFrom("itinerary", item.id)} className="text-[11px] font-bold text-rose-600">Удал.</button></div></div><h4 className="font-extrabold text-slate-800 dark:text-slate-200 text-sm">{item.title}</h4><p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mt-1">{item.content}</p></div></div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    function BudgetSection({ trip, openModal, deleteFrom, rates, setRates, displayCurrency, setDisplayCurrency, showRates, setShowRates, budgetCats }) {
+      const total = trip.budget.reduce((sum, item) => sum + convertMoney(item.cost, item.currency, displayCurrency, rates), 0);
+      return (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center gap-4"><div><h3 className="text-lg font-bold">💰 Бюджет</h3><p className="text-xs text-slate-400">Добавляйте, редактируйте и удаляйте статьи расходов.</p></div><button onClick={() => openModal("budget")} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-2xl text-sm font-bold flex items-center gap-1.5">+ Добавить расход</button></div>
+          <div className="bg-gradient-to-br from-emerald-900 to-teal-950 rounded-3xl p-6 text-white shadow-lg">
+            <p className="text-xs text-emerald-200 uppercase tracking-wider font-bold">Общая сумма расходов</p>
+            <p className="text-3xl font-extrabold mt-1">{formatMoney(total, displayCurrency)}</p>
+            {displayCurrency !== "₽" && <p className="text-base text-yellow-300 mt-1 font-extrabold tracking-wide drop-shadow-sm">({convertMoney(total, displayCurrency, "₽", rates).toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ₽)</p>}
+            <div className="flex flex-wrap gap-2 mt-5">{Object.keys(rates).map((currency) => <button key={currency} onClick={() => setDisplayCurrency(currency)} className={`px-4 py-2 rounded-2xl text-sm font-bold ${displayCurrency === currency ? "bg-white text-emerald-900" : "bg-white/10 text-emerald-100 hover:bg-white/20"}`}>{currency}</button>)}</div>
+            <button onClick={() => setShowRates(!showRates)} className="mt-4 text-xs font-bold text-emerald-100 hover:text-white underline underline-offset-4">{showRates ? "Скрыть курсы валют" : "Настроить курсы валют"}</button>
+          </div>
+          {showRates && (
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 shadow-sm">
+              <h3 className="font-extrabold text-base mb-1">💱 Настраиваемый конвертер валют</h3><p className="text-xs text-slate-400 mb-4">Скорректируйте стоимость валют в рублях. Пересчёт применяется сразу.</p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">{["$", "€", "¥"].map((currency) => <label key={currency} className="bg-slate-50 dark:bg-slate-800 rounded-2xl p-3"><span className="text-xs font-bold text-slate-400 block mb-1">1 {currency} в ₽</span><input type="number" step="0.01" value={rates[currency]} onChange={(event) => setRates((previous) => ({ ...previous, [currency]: Number(event.target.value) || 0 }))} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500" /></label>)}</div>
+            </div>
+          )}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {budgetCats.map((cat) => {
+              const items = trip.budget.filter((item) => item.category === cat);
+              const catTotal = items.reduce((sum, item) => sum + convertMoney(item.cost, item.currency, displayCurrency, rates), 0);
+              return (
+                <Card key={cat} title={`${cat} · ${formatMoney(catTotal, displayCurrency)}`}>
+                  {items.map((item) => (
+                    <div key={item.id} className="flex justify-between items-center gap-3 py-2 border-b border-slate-100 dark:border-slate-800 last:border-0 text-xs group">
+                      <div className="min-w-0"><span className="text-slate-700 dark:text-slate-300 font-semibold truncate block">{item.title}</span><div className="flex gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 mt-1"><button onClick={() => openModal("budget", item)} className="text-[11px] font-bold text-blue-600">Изм.</button><button onClick={() => deleteFrom("budget", item.id)} className="text-[11px] font-bold text-rose-600">Удал.</button></div></div>
+                      <div className="text-right shrink-0"><span className="font-bold text-slate-800 dark:text-white">{formatMoney(convertMoney(item.cost, item.currency, displayCurrency, rates), displayCurrency)}</span>{displayCurrency !== "₽" && <div className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-0.5">≈ {formatMoney(convertMoney(item.cost, item.currency, "₽", rates), "₽")}</div>}</div>
+                    </div>
+                  ))}
+                  {items.length === 0 && <p className="text-slate-400 text-xs">Нет расходов.</p>}
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    function ArchiveScreen({ archivedTrips, rates, open, restore }) {
+      return (
+        <div className="space-y-6">
+          <div><h2 className="text-2xl font-extrabold tracking-tight">📦 Архив путешествий</h2><p className="text-xs text-slate-400 mt-1">Завершённые поездки можно открыть или вернуть в активные.</p></div>
+          {archivedTrips.length === 0 ? (
+            <div className="bg-white dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-800 rounded-3xl p-10 text-center"><div className="text-5xl mb-3">🗂️</div><h3 className="font-bold text-lg">Архив пока пуст</h3><p className="text-sm text-slate-400 mt-1">Когда поездка закончится, нажмите «Завершить и в архив».</p></div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {archivedTrips.map((item) => {
+                const total = item.budget.reduce((sum, budget) => sum + convertMoney(budget.cost, budget.currency, "₽", rates), 0);
+                const progress = item.tasks.length ? Math.round((item.tasks.filter((task) => task.completed).length / item.tasks.length) * 100) : 0;
+                return (
+                  <div key={item.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 shadow-sm">
+                    <div className="flex items-start justify-between gap-3"><div><div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 text-xs font-bold uppercase tracking-wider mb-2">📦 Архивная поездка</div><h3 className="text-xl font-extrabold text-slate-900 dark:text-white">{item.name}</h3><p className="text-xs text-slate-400 mt-1">{item.archivedAt ? `В архиве с ${new Date(item.archivedAt).toLocaleDateString("ru-RU")}` : "Завершённая поездка"}</p></div><span className="text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 px-2 py-1 rounded-full font-bold">архив</span></div>
+                    <div className="grid grid-cols-3 gap-3 mt-5 text-center"><div className="bg-slate-50 dark:bg-slate-800 rounded-2xl p-3"><div className="text-sm font-bold">{item.tasks.length}</div><div className="text-[10px] text-slate-400">задач</div></div><div className="bg-slate-50 dark:bg-slate-800 rounded-2xl p-3"><div className="text-sm font-bold">{progress}%</div><div className="text-[10px] text-slate-400">готово</div></div><div className="bg-slate-50 dark:bg-slate-800 rounded-2xl p-3"><div className="text-sm font-bold">{formatMoney(total, "₽", 0)}</div><div className="text-[10px] text-slate-400">бюджет</div></div></div>
+                    <div className="flex gap-2 mt-5"><button onClick={() => open(item.id)} className="flex-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 px-4 py-2.5 rounded-2xl text-sm font-bold">Открыть</button><button onClick={() => restore(item.id)} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-2xl text-sm font-bold">Вернуть</button></div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function EditorModal({ modal, form, setField, save, close, rates, packingCats, noteCats, budgetCats, addCategory }) {
+      const titleMap = {
+        trip: "🌍 Новая поездка",
+        task: form.id ? "✏️ Редактировать задачу" : "📌 Новая задача",
+        packing: form.id ? "✏️ Редактировать вещь" : "🧳 Новая вещь",
+        last: form.id ? "✏️ Редактировать пункт" : "⚡ Новый пункт чек-листа",
+        note: form.id ? "✏️ Редактировать заметку" : "📝 Новая заметка",
+        itinerary: form.id ? "✏️ Редактировать маршрут" : "🗺️ Новое событие",
+        budget: form.id ? "✏️ Редактировать расход" : "💰 Новый расход",
+      };
+
+      const addCategoryInsideModal = (type, fieldName) => {
+        const added = addCategory(type, form.newCategory || "");
+        if (added) { setField(fieldName, added); setField("newCategory", ""); }
+      };
+
+      return (
+        <Modal title={titleMap[modal]}>
+          <div className="space-y-4">
+            {modal === "trip" && (<><input value={form.name || ""} onChange={(event) => setField("name", event.target.value)} placeholder="Например: Рим, Париж, Токио" className="w-full bg-slate-100 dark:bg-slate-800 rounded-2xl px-4 py-3 outline-none" /><input type="date" value={form.date || ""} onChange={(event) => setField("date", event.target.value)} className="w-full bg-slate-100 dark:bg-slate-800 rounded-2xl px-4 py-3 outline-none" /></>)}
+            {modal === "task" && (<><input value={form.title || ""} onChange={(event) => setField("title", event.target.value)} placeholder="Например: Купить страховку" className="w-full bg-slate-100 dark:bg-slate-800 rounded-2xl px-4 py-3 outline-none" /><select value={form.time || "В планах"} onChange={(event) => setField("time", event.target.value)} className="w-full bg-slate-100 dark:bg-slate-800 rounded-2xl px-4 py-3 outline-none">{TASK_TIMES.map((item) => <option key={item} value={item}>{item}</option>)}</select></>)}
+            {modal === "packing" && (<><input value={form.item || ""} onChange={(event) => setField("item", event.target.value)} placeholder="Например: Powerbank" className="w-full bg-slate-100 dark:bg-slate-800 rounded-2xl px-4 py-3 outline-none" /><select value={form.cat || packingCats[0]} onChange={(event) => setField("cat", event.target.value)} className="w-full bg-slate-100 dark:bg-slate-800 rounded-2xl px-4 py-3 outline-none">{packingCats.map((item) => <option key={item} value={item}>{item}</option>)}</select><div className="flex gap-2"><input value={form.newCategory || ""} onChange={(event) => setField("newCategory", event.target.value)} placeholder="Новая категория вещей" className="flex-1 bg-slate-100 dark:bg-slate-800 rounded-2xl px-4 py-3 outline-none" /><button type="button" onClick={() => addCategoryInsideModal("packing", "cat")} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-3 rounded-2xl text-xs font-bold">+ Категория</button></div></>)}
+            {modal === "last" && <input value={form.title || ""} onChange={(event) => setField("title", event.target.value)} placeholder="Например: Газ выключен" className="w-full bg-slate-100 dark:bg-slate-800 rounded-2xl px-4 py-3 outline-none" />}
+            {modal === "note" && (<><input value={form.title || ""} onChange={(event) => setField("title", event.target.value)} placeholder="Название заметки" className="w-full bg-slate-100 dark:bg-slate-800 rounded-2xl px-4 py-3 outline-none" /><textarea value={form.content || ""} onChange={(event) => setField("content", event.target.value)} placeholder="Текст заметки" rows={5} className="w-full bg-slate-100 dark:bg-slate-800 rounded-2xl px-4 py-3 outline-none resize-none" /><select value={form.category || noteCats[0]} onChange={(event) => setField("category", event.target.value)} className="w-full bg-slate-100 dark:bg-slate-800 rounded-2xl px-4 py-3 outline-none">{noteCats.map((item) => <option key={item} value={item}>{item}</option>)}</select><div className="flex gap-2"><input value={form.newCategory || ""} onChange={(event) => setField("newCategory", event.target.value)} placeholder="Новая категория заметок" className="flex-1 bg-slate-100 dark:bg-slate-800 rounded-2xl px-4 py-3 outline-none" /><button type="button" onClick={() => addCategoryInsideModal("notes", "category")} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-3 rounded-2xl text-xs font-bold">+ Категория</button></div></>)}
+            {modal === "itinerary" && (<><div className="grid grid-cols-2 gap-3"><input value={form.day || ""} onChange={(event) => setField("day", event.target.value)} placeholder="День 1" className="w-full bg-slate-100 dark:bg-slate-800 rounded-2xl px-4 py-3 outline-none" /><input type="time" value={form.time || "12:00"} onChange={(event) => setField("time", event.target.value)} className="w-full bg-slate-100 dark:bg-slate-800 rounded-2xl px-4 py-3 outline-none" /></div><input value={form.title || ""} onChange={(event) => setField("title", event.target.value)} placeholder="Название события" className="w-full bg-slate-100 dark:bg-slate-800 rounded-2xl px-4 py-3 outline-none" /><textarea value={form.content || ""} onChange={(event) => setField("content", event.target.value)} placeholder="Описание, адрес, детали" rows={4} className="w-full bg-slate-100 dark:bg-slate-800 rounded-2xl px-4 py-3 outline-none resize-none" /></>)}
+            {modal === "budget" && (<><input value={form.title || ""} onChange={(event) => setField("title", event.target.value)} placeholder="Например: Такси до аэропорта" className="w-full bg-slate-100 dark:bg-slate-800 rounded-2xl px-4 py-3 outline-none" /><div className="grid grid-cols-2 gap-3"><input type="number" step="0.01" value={form.cost || ""} onChange={(event) => setField("cost", event.target.value)} placeholder="Сумма" className="w-full bg-slate-100 dark:bg-slate-800 rounded-2xl px-4 py-3 outline-none" /><select value={form.currency || "₽"} onChange={(event) => setField("currency", event.target.value)} className="w-full bg-slate-100 dark:bg-slate-800 rounded-2xl px-4 py-3 outline-none">{Object.keys(rates).map((item) => <option key={item} value={item}>{item}</option>)}</select></div><select value={form.category || budgetCats[0]} onChange={(event) => setField("category", event.target.value)} className="w-full bg-slate-100 dark:bg-slate-800 rounded-2xl px-4 py-3 outline-none">{budgetCats.map((item) => <option key={item} value={item}>{item}</option>)}</select><div className="flex gap-2"><input value={form.newCategory || ""} onChange={(event) => setField("newCategory", event.target.value)} placeholder="Новая категория бюджета" className="flex-1 bg-slate-100 dark:bg-slate-800 rounded-2xl px-4 py-3 outline-none" /><button type="button" onClick={() => addCategoryInsideModal("budget", "category")} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-3 rounded-2xl text-xs font-bold">+ Категория</button></div></>)}
+            <div className="flex gap-3 pt-2"><button onClick={close} className="flex-1 bg-slate-200 dark:bg-slate-800 py-3 rounded-2xl font-semibold">Отмена</button><button onClick={save} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-2xl font-semibold">{form.id ? "Сохранить" : "Добавить"}</button></div>
+          </div>
+        </Modal>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
