@@ -44,9 +44,12 @@
       --shadow2:0 10px 28px rgba(51,105,244,.28);
     }
     *{box-sizing:border-box}
-    html{scroll-behavior:smooth}
+    html{scroll-behavior:smooth;width:100%;overflow-x:hidden}
     body{
       margin:0;
+      width:100%;
+      max-width:100%;
+      overflow-x:hidden;
       font-family:"Nunito", Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
       background:
         radial-gradient(circle at 85% -10%, rgba(82,132,255,.20), transparent 32%),
@@ -198,6 +201,12 @@
     .offline.show{display:block}
     .empty{border:1px dashed var(--line);border-radius:22px;padding:20px;text-align:center;color:var(--muted);font-weight:800;background:rgba(255,255,255,.35)}
     input[type="checkbox"]{width:18px;height:18px;accent-color:var(--blue);box-shadow:none;padding:0}
+
+    .med-layout{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+    .med-actions{display:grid;gap:10px}
+    .med-actions.two{grid-template-columns:1fr auto auto}
+    .mobile-only{display:none}
+    .desktop-only{display:block}
     @media(max-width:860px){
       :root{--radius:22px}
       body{background:linear-gradient(180deg,var(--bg),var(--bg2));overflow-x:hidden}
@@ -276,6 +285,19 @@
       .modal{align-items:flex-end;padding:10px}
       .modal-box{border-radius:26px 26px 18px 18px;padding:20px;max-height:88dvh}
       .offline{left:12px;right:12px;bottom:100px;text-align:center}
+      html,body,#app{width:100%;max-width:100%;overflow-x:hidden}
+      .main,.top,.card,.grid,.row,.list,.item,.tabs{min-width:0;max-width:100%}
+      .med-layout{display:block}
+      .med-layout>.card{margin-bottom:12px}
+      .med-actions,.med-actions.two{display:grid;grid-template-columns:1fr;gap:10px}
+      .mobile-only{display:block}
+      .desktop-only{display:none}
+      .tabs{margin-left:-2px;margin-right:-2px;padding-left:2px;padding-right:2px;scroll-snap-type:x proximity}
+      .tabs button{font-size:14px;scroll-snap-align:start}
+      .med-layout .card:first-child h3{font-size:20px}
+      .med-layout .card:first-child .muted{font-size:14px}
+      .med-layout .item{align-items:center}
+      .med-layout .item .btn.small{min-width:98px}
     }
     @media(max-width:420px){
       .main{padding-left:12px;padding-right:12px}
@@ -285,6 +307,8 @@
       .nav button{min-width:58px;font-size:9.5px;padding-left:4px;padding-right:4px}
       .nav button span:first-child{font-size:19px}
       .card{padding:15px 14px}
+      .tabs button{font-size:13px;padding:9px 12px}
+      .med-layout .item .btn.small{min-width:90px;font-size:12px}
     }
 </style>
 </head>
@@ -344,8 +368,7 @@
   function home(t){ const totalTasks=t.tasks.length, doneTasks=t.tasks.filter(i=>i.done).length, totalPack=t.packing.length, donePack=t.packing.filter(i=>i.done).length, totalMeds=t.medkit.flatMap(f=>f.items).length, doneMeds=t.medkit.flatMap(f=>f.items).filter(i=>i.done).length; return `<div class="grid grid3"><div class="stat"><div class="muted">Подготовка</div><b>${doneTasks}/${totalTasks}</b></div><div class="stat"><div class="muted">Вещи</div><b>${donePack}/${totalPack}</b></div><div class="stat"><div class="muted">Аптечка</div><b>${doneMeds}/${totalMeds}</b></div></div><br><div class="card"><h2>Поездка</h2><div class="grid grid2"><div><b>Название:</b><br>${escapeHtml(t.name)}</div><div><b>Дата:</b><br>${escapeHtml(t.date||'не указана')}</div></div><br><div class="row"><button class="btn primary" data-modal="editTrip">Редактировать поездку</button><button class="btn red" data-action="archiveTrip">Отправить в архив</button></div></div>`; }
   function tasks(t){ const groups=['В планах','За 30 дней','За 14 дней','За 7 дней','24 часа']; return `<div class="card"><div class="row"><input id="taskTitle" placeholder="Новая задача"><select id="taskTime">${groups.map(g=>`<option>${g}</option>`).join('')}</select><button class="btn primary" data-action="addTask">Добавить</button></div></div><br><div class="grid grid2">${groups.map(g=>`<div class="card"><h3>${g}</h3><div class="list">${items(t.tasks.filter(i=>i.time===g),'task')}</div></div>`).join('')}</div>`; }
   function packing(t){ const active=t.activePackingCat||t.packingCats[0]; return `<div class="card"><div class="tabs">${t.packingCats.map(c=>`<button class="${c===active?'active':''}" data-pack-cat="${escapeAttr(c)}">${escapeHtml(c)}</button>`).join('')}</div><div class="row"><input id="packTitle" placeholder="Что взять"><button class="btn primary" data-action="addPack">Добавить</button></div></div><br><div class="card"><div class="list">${items(t.packing.filter(i=>i.cat===active),'pack')}</div></div>`; }
-  function medkit(t){ const active=t.activeMedFolder||t.medkit[0]?.name; const folder=t.medkit.find(f=>f.name===active)||t.medkit[0]; const total=t.medkit.reduce((s,f)=>s+(f.items?.length||0),0); return `<div class="grid grid2"><div class="card"><h3>Папки</h3><div class="tabs">${t.medkit.map(f=>`<button class="${f.name===folder.name?'active':''}" data-med-folder="${escapeAttr(f.name)}">${escapeHtml(f.name)}</button>`).join('')}</div><div class="row"><input id="newMedFolder" placeholder="Новая папка"><button class="btn primary" data-action="addMedFolder">Создать папку</button></div><br><div class="row"><input id="renameMedFolder" value="${escapeAttr(folder.name)}"><button class="btn ghost" data-action="renameMedFolder">Переименовать</button><button class="btn red" data-action="deleteMedFolder">Удалить</button></div><br><h3>Добавить препарат</h3><div class="row"><input id="medTitle" placeholder="Название препарата"><button class="btn primary" data-action="addMed">Добавить</button></div><p class="muted">Препарат добавится в выбранную папку: <b>${escapeHtml(folder.name)}</b></p></div><div class="card"><h3>Список аптечки</h3><p class="muted">Все папки и препараты в одном чек-листе. Отмечайте, что уже взяли.</p><div class="list">${total?medkitChecklist(t):'<div class="empty">Пока нет препаратов. Выберите папку слева и добавьте название.</div>'}</div></div></div>`; }
-  function details(t){ return `<div class="grid grid2"><div class="card"><h3>Детали поездки</h3><div class="form"><input data-detail="hotel" placeholder="Отель / адрес" value="${escapeAttr(t.details.hotel)}"><input data-detail="tickets" placeholder="Билеты / рейсы" value="${escapeAttr(t.details.tickets)}"><input data-detail="insurance" placeholder="Страховка" value="${escapeAttr(t.details.insurance)}"><textarea data-detail="contacts" placeholder="Контакты и важная информация">${escapeHtml(t.details.contacts)}</textarea></div></div><div class="card"><h3>Маршрут</h3><div class="row"><input id="routeDay" placeholder="День"><input id="routeTime" placeholder="Время"><input id="routeTitle" placeholder="Событие"><button class="btn primary" data-action="addRoute">Добавить</button></div><br><div class="list">${t.itinerary.map(r=>`<div class="item"><div><b>${escapeHtml(r.day)} ${escapeHtml(r.time)}</b><br>${escapeHtml(r.title)}<br><span class="muted">${escapeHtml(r.content||'')}</span></div><button class="btn small red" data-del-route="${r.id}">×</button></div>`).join('')||'<div class="empty">Маршрут пуст</div>'}</div></div></div>`; }
+  function medkit(t){ const active=t.activeMedFolder||t.medkit[0]?.name; const folder=t.medkit.find(f=>f.name===active)||t.medkit[0]; const total=t.medkit.reduce((sum,f)=>sum+(f.items?.length||0),0); return `<div class="med-layout"><div class="card"><h3>Папки</h3><p class="muted mobile-only">Выберите папку, добавьте препарат и отмечайте его ниже в общем списке.</p><div class="tabs">${t.medkit.map(f=>`<button class="${f.name===folder.name?'active':''}" data-med-folder="${escapeAttr(f.name)}">${escapeHtml(f.name)}</button>`).join('')}</div><div class="med-actions"><input id="newMedFolder" placeholder="Новая папка"><button class="btn primary" data-action="addMedFolder">Создать папку</button></div><br><div class="med-actions two"><input id="renameMedFolder" value="${escapeAttr(folder.name)}"><button class="btn ghost" data-action="renameMedFolder">Переименовать</button><button class="btn red" data-action="deleteMedFolder">Удалить</button></div><br><h3>Добавить препарат</h3><div class="med-actions"><input id="medTitle" placeholder="Название препарата"><button class="btn primary" data-action="addMed">Добавить</button></div><p class="muted">Добавится в папку: <b>${escapeHtml(folder.name)}</b></p></div><div class="card"><h3>Список аптечки</h3><p class="muted">Все папки и препараты в одном чек-листе. Нажимайте статус, чтобы менять “взяла / не взяла”.</p><div class="list">${total?medkitChecklist(t):'<div class="empty">Пока нет препаратов. Выберите папку и добавьте название.</div>'}</div></div></div>`; }
 
   function medkitChecklist(t){ return t.medkit.map(f=>`<div class="card" style="box-shadow:none;padding:14px;border-radius:18px"><div class="row" style="justify-content:space-between;margin-bottom:8px"><b>📁 ${escapeHtml(f.name)}</b><span class="pill">${(f.items||[]).filter(i=>i.done).length}/${(f.items||[]).length}</span></div><div class="list">${(f.items||[]).map(i=>`<div class="item ${i.done?'done':''}"><label class="row" style="flex:1;cursor:pointer"><input style="width:auto" type="checkbox" ${i.done?'checked':''} data-toggle-med-all="${i.id}" data-med-folder-id="${f.id}"><span class="item-title">${escapeHtml(i.title)}</span></label><button class="btn small ${i.done?'primary':'ghost'}" data-toggle-med-btn="${i.id}" data-med-folder-id="${f.id}">${i.done?'✓ взяла':'не взяла'}</button></div>`).join('')||'<div class="empty">В этой папке пока пусто</div>'}</div></div>`).join(''); }
   function budget(t){ const plan=sumBudget(t.budgetPlan), fact=sumBudget(t.budgetFact), diff=plan-fact; const status=diff>=0?'Уложилась':'Превышение бюджета'; return `<div class="grid grid3"><div class="stat"><div class="muted">Приблизительный бюджет</div><b>${money(plan)}</b></div><div class="stat"><div class="muted">Фактически потрачено</div><b>${money(fact)}</b></div><div class="stat"><div class="muted">Разница</div><b class="${diff>=0?'ok':'bad'}">${diff>=0?'+':''}${money(diff)}</b><br><span class="${diff>=0?'ok':'bad'}">${status}</span></div></div><br><div class="grid grid2"><div class="card"><h3>Приблизительный бюджет</h3>${budgetForm('plan')}<br><div class="list">${budgetItems(t.budgetPlan,'plan')}</div></div><div class="card"><h3>Фактический бюджет</h3>${budgetForm('fact')}<br><div class="list">${budgetItems(t.budgetFact,'fact')}</div></div></div>`; }
